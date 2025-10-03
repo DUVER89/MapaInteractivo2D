@@ -3,6 +3,7 @@ using TMPro;
 using System.Collections.Generic;
 using System.Collections;
 using UnityEngine.Networking;
+using System.Linq; // 👈 necesario para GroupBy / Distinct
 
 [System.Serializable]
 public class Expositor
@@ -65,9 +66,8 @@ public class GestorExpositores : MonoBehaviour
                 expositores = JsonHelper.FromJson<Expositor>(json);
                 Debug.Log("✅ Expositores cargados: " + expositores.Count);
 
-                // Ya podemos escuchar cambios en el input
                 campoBusqueda.onValueChanged.AddListener(FiltrarResultados);
-                textoResultado.text = "✏️ Escribe un nombre o stand...";
+                textoResultado.text = "✏️ Escribe un nombre o un stand (mín. 3 caracteres)...";
             }
             catch (System.Exception e)
             {
@@ -88,24 +88,59 @@ public class GestorExpositores : MonoBehaviour
 
         if (string.IsNullOrEmpty(texto))
         {
-            textoResultado.text = "✏️ Escribe un nombre o stand...";
+            textoResultado.text = "✏️ Escribe un nombre o un stand (mín. 3 caracteres)...";
             return;
         }
 
-        Expositor encontrado = expositores.Find(e =>
-            (!string.IsNullOrEmpty(e.nom_catalogo) && e.nom_catalogo.ToLower().Contains(texto.ToLower())) ||
-            (!string.IsNullOrEmpty(e.stand) && e.stand.ToLower().Contains(texto.ToLower())) ||
-            (!string.IsNullOrEmpty(e.num_iden) && e.num_iden.ToLower().Contains(texto.ToLower()))
-        );
-
-        if (encontrado != null)
+        // 📌 Filtro: mínimo 3 caracteres
+        if (texto.Length < 3)
         {
-            textoResultado.text =
-                $"✅ {encontrado.nom_catalogo}\n" +
-                $"🆔 ID: {encontrado.num_iden}\n" +
-                $"📍 Pabellón: {encontrado.pabellon}\n" +
-                $"🏢 Nivel: {encontrado.nivel}\n" +
-                $"🔢 Stand: {encontrado.stand}";
+            textoResultado.text = "⌛ Escribe al menos 3 caracteres para buscar...";
+            return;
+        }
+
+        List<Expositor> encontrados;
+
+        // 🔢 Si el input es solo números → buscar por Stand
+        if (texto.All(char.IsDigit))
+        {
+            encontrados = expositores.FindAll(e =>
+                !string.IsNullOrEmpty(e.stand) && e.stand.ToLower().Contains(texto.ToLower())
+            );
+        }
+        else
+        {
+            // 🔤 Si contiene letras → buscar por nombre (nom_catalogo)
+            encontrados = expositores.FindAll(e =>
+                !string.IsNullOrEmpty(e.nom_catalogo) && e.nom_catalogo.ToLower().Contains(texto.ToLower())
+            );
+        }
+
+        // ✅ Eliminar duplicados por ID
+        encontrados = encontrados
+            .GroupBy(e => e.num_iden)
+            .Select(g => g.First())
+            .ToList();
+
+        if (encontrados.Count > 0)
+        {
+            // Ordenar por nombre alfabéticamente
+            encontrados.Sort((a, b) => string.Compare(a.nom_catalogo, b.nom_catalogo, true));
+
+            // Construir texto con resultados
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            foreach (Expositor e in encontrados)
+            {
+                sb.AppendLine(
+                    $"<b>{e.nom_catalogo}</b>\n" +
+                    $"• ID: {e.num_iden}\n" +
+                    $"• Pabellón: {e.pabellon}\n" +
+                    $"• Nivel: {e.nivel}\n" +
+                    $"• Stand: {e.stand}\n"
+                );
+            }
+
+            textoResultado.text = sb.ToString();
         }
         else
         {
@@ -132,4 +167,3 @@ public static class JsonHelper
         public List<T> Items;
     }
 }
-
